@@ -80,12 +80,16 @@ For most production use cases, **single-hop is recommended** over dual-hop:
 - Half the cross-geo latency (~35ms vs ~70ms)
 - Simpler policy
 
-## Cost
+## Cost (us-east-1 pricing)
 
 - Cloud WAN Core Network Edge: $0.50/hour per region with attachments
-- VPC Attachment: $0.065/hour per attachment
+- VPC Attachment: $0.065/hour per attachment (varies by region)
 - Data Processing: $0.02/GB
 - EC2 (t3.micro): ~$0.01/hour per appliance (lab only)
+
+See [AWS Cloud WAN Pricing](https://aws.amazon.com/cloud-wan/pricing/) for current rates.
+
+> **Note:** The inspection VPCs in this lab use EC2 instances configured as transparent packet forwarders (IP forwarding + iptables FORWARD ACCEPT) to emulate firewall behavior. In production, replace these with AWS Network Firewall or third-party appliances behind Gateway Load Balancer (GWLB).
 
 ## Cleanup
 
