@@ -5,24 +5,25 @@ Deploy a multi-region AWS Cloud WAN network with geographic segment isolation an
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────┐
-                    │        AWS Cloud WAN Global Network     │
-                    │                                         │
-  us-east-1         │   CNE: us-east-1    CNE: eu-west-1      │
-  ┌────────────┐    │                                         │   ┌────────────┐
-  │ NA-Prod    │───►│  Segments:          Segments:           │◄──│ EU-Prod    │
-  │ 10.100.0/24│    │  NAProd01           EUProd01            │   │ 10.102.0/24│
-  └────────────┘    │  NANonProd01        EUNonProd01         │   └────────────┘
-  ┌────────────┐    │                                         │
-  │ NA-NonProd │───►│  NFGs:              NFGs:               │
-  │ 10.101.0/24│    │  NorthAmericaNFG01  EuropeNFG01         │
-  └────────────┘    │  CrossGeoNFG01 (both regions)           │
-                    │  NAEgressNFG01     EUEgressNFG01        │
-  ┌────────────┐    │                                         │   ┌────────────┐
-  │ Inspection │───►│  send-via dual-hop (inter-segment)      │◄──│ Inspection │
-  │ NA         │    │  send-to (internet egress)              │   │ EU         │
-  │ 10.200.0/24│    │                                         │   │ 10.201.0/24│
-  └────────────┘    └─────────────────────────────────────────┘   └────────────┘
+                    ┌─────────────────────────────────────────────────────┐
+                    │            AWS Cloud WAN Global Network             │
+                    │                                                     │
+                    │   CNE: us-east-1   CNE: us-west-2   CNE: eu-west-1  │
+  us-east-1         │                                                     │   eu-west-1
+  ┌────────────┐    │                                                     │   ┌────────────┐
+  │ NA-Prod    │───►│  Segments:                          Segments:       │◄──│ EU-Prod    │
+  │ 10.100.0/24│    │  NAProd01 (us-east-1, us-west-2)    EUProd01        │   │ 10.102.0/24│
+  └────────────┘    │  NANonProd01 (us-east-1, us-west-2) EUNonProd01     │   └────────────┘
+  ┌────────────┐    │                                                     │
+  │ NA-NonProd │───►│  NFGs:                              NFGs:           │
+  │ 10.101.0/24│    │  NorthAmericaNFG01                  EuropeNFG01     │
+  └────────────┘    │  CrossGeoNFG01 (both regions)                       │
+                    │  NAEgressNFG01                      EUEgressNFG01   │
+  ┌────────────┐    │                                                     │   ┌────────────┐
+  │ Inspection │───►│  send-via dual-hop (inter-segment)                  │◄──│ Inspection │
+  │ NA         │    │  send-to (internet egress)                          │   │ EU         │
+  │ 10.200.0/24│    │                                                     │   │ 10.201.0/24│
+  └────────────┘    └─────────────────────────────────────────────────────┘   └────────────┘
 ```
 
 ## Features Demonstrated
