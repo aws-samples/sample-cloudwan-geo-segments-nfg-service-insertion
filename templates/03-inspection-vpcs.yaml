@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Inspection VPCs for Cloud WAN NFG Lab.
+  Deploys inspection VPCs with CWAN subnets, appliance subnet, and the critical
+  dual-route-table design (CWAN RT → appliance ENI, Appliance RT → Core Network).
+
+Parameters:
+  CoreNetworkId:
+    Type: String
+    Description: Core Network ID from stack 01
+  VpcName:
+    Type: String
+    Description: Name prefix for resources
+  VpcCidr:
+    Type: String
+    Description: VPC CIDR (e.g., 10.200.0.0/24)
+  CwanSubnetACidr:
+    Type: String
+    Description: Cloud WAN attachment subnet AZ-a (/28)
+  CwanSubnetBCidr:
+    Type: String
+    Description: Cloud WAN attachment subnet AZ-b (/28)
+  ApplianceSubnetCidr:
+    Type: String
+    Description: Appliance subnet (/25)
+  NfgName:
+    Type: String
+    Description: NFG to attach to
+    AllowedValues:
+      - NorthAmericaNFG01
+      - EuropeNFG01
+      - CrossGeoNFG01
+      - NorthAmericaEgressNFG01
+      - EuropeEgressNFG01
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VpcName
+
+  CwanSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref CwanSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-cwan-a
+
+  CwanSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref CwanSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-cwan-b
+
+  ApplianceSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref ApplianceSubnetCidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-appliance-a
+
+  # Cloud WAN VPC Attachment (with appliance mode for symmetric routing)
+  CloudWanAttachment:
+    Type: AWS::NetworkManager::VpcAttachment
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      VpcArn: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}
+      SubnetArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CwanSubnetA}
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CwanSubnetB}
+      Options:
+        ApplianceModeSupport: true
+      Tags:
+        - Key: "cloudwan:nfg"
+          Value: !Ref NfgName
+        - Key: Name
+          Value: !Sub ${VpcName}-attachment
+
+  # --- CRITICAL: Dual Route Table Design ---
+  # Route Table 1: CWAN Subnets → Appliance ENI
+  # Traffic from Cloud WAN enters CWAN subnet and must be routed to the appliance
+  CwanRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-cwan-rt
+
+  CwanSubnetARtAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref CwanSubnetA
+      RouteTableId: !Ref CwanRouteTable
+
+  CwanSubnetBRtAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref CwanSubnetB
+      RouteTableId: !Ref CwanRouteTable
+
+  # Route Table 2: Appliance Subnet → Core Network (return path)
+  # After inspection, traffic must return to Cloud WAN via Core Network
+  ApplianceRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-appliance-rt
+
+  ApplianceSubnetRtAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ApplianceSubnet
+      RouteTableId: !Ref ApplianceRouteTable
+
+  # Return route: Appliance → Core Network
+  ApplianceReturnRoute:
+    Type: AWS::EC2::Route
+    DependsOn: CloudWanAttachment
+    Properties:
+      RouteTableId: !Ref ApplianceRouteTable
+      DestinationCidrBlock: 10.0.0.0/8
+      CoreNetworkArn: !Sub arn:aws:networkmanager::${AWS::AccountId}:core-network/${CoreNetworkId}
+
+  # NOTE: The CWAN RT route to appliance ENI (10.0.0.0/8 → ENI)
+  # must be added AFTER the EC2 appliance is deployed (template 04).
+  # Use aws ec2 create-route --route-table-id <CwanRouteTable> 
+  #   --destination-cidr-block 10.0.0.0/8 --network-interface-id <ApplianceENI>
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+  AttachmentId:
+    Value: !Ref CloudWanAttachment
+  CwanRouteTableId:
+    Value: !Ref CwanRouteTable
+    Description: Add route to appliance ENI after deploying EC2 (template 04)
+  ApplianceSubnetId:
+    Value: !Ref ApplianceSubnet

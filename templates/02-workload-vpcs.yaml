@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Workload VPCs for Cloud WAN Geo-Segments NFG Lab.
+  Deploys spoke VPCs with Cloud WAN attachment subnets (2 AZs) and workload subnet.
+
+Parameters:
+  CoreNetworkId:
+    Type: String
+    Description: Core Network ID from stack 01
+  VpcName:
+    Type: String
+    Description: Name prefix for resources
+  VpcCidr:
+    Type: String
+    Description: VPC CIDR (e.g., 10.100.0.0/24)
+  CwanSubnetACidr:
+    Type: String
+    Description: Cloud WAN attachment subnet AZ-a (/28)
+  CwanSubnetBCidr:
+    Type: String
+    Description: Cloud WAN attachment subnet AZ-b (/28)
+  WorkloadSubnetCidr:
+    Type: String
+    Description: Workload subnet (/25)
+  SegmentName:
+    Type: String
+    Description: Cloud WAN segment to attach to
+    AllowedValues:
+      - NorthAmericaProd01
+      - NorthAmericaNonProd01
+      - EuropeProd01
+      - EuropeNonProd01
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VpcName
+
+  CwanSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref CwanSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-cwan-a
+
+  CwanSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref CwanSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-cwan-b
+
+  WorkloadSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref WorkloadSubnetCidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-workload-a
+
+  # Cloud WAN VPC Attachment
+  CloudWanAttachment:
+    Type: AWS::NetworkManager::VpcAttachment
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      VpcArn: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}
+      SubnetArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CwanSubnetA}
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CwanSubnetB}
+      Tags:
+        - Key: "cloudwan:segment"
+          Value: !Ref SegmentName
+        - Key: Name
+          Value: !Sub ${VpcName}-attachment
+
+  # Route table for workload subnet — routes to Cloud WAN
+  WorkloadRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName}-workload-rt
+
+  WorkloadSubnetRtAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref WorkloadSubnet
+      RouteTableId: !Ref WorkloadRouteTable
+
+  # Route to Cloud WAN for all internal traffic
+  WorkloadRouteToCwan:
+    Type: AWS::EC2::Route
+    DependsOn: CloudWanAttachment
+    Properties:
+      RouteTableId: !Ref WorkloadRouteTable
+      DestinationCidrBlock: 10.0.0.0/8
+      CoreNetworkArn: !Sub arn:aws:networkmanager::${AWS::AccountId}:core-network/${CoreNetworkId}
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+  AttachmentId:
+    Value: !Ref CloudWanAttachment
+  WorkloadSubnetId:
+    Value: !Ref WorkloadSubnet

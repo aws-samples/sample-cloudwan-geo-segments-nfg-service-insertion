@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AWS Cloud WAN - Single Global Network with Geo-Based Segments and NFG Service Insertion
+  Deploys a Cloud WAN core network with geographic segments, 5 Network Function Groups,
+  and dual-hop service insertion for intra-geo and cross-geo traffic inspection.
+
+Resources:
+  GlobalNetwork:
+    Type: AWS::NetworkManager::GlobalNetwork
+    Properties:
+      Description: Cloud WAN Geo-Segments NFG Lab
+      Tags:
+        - Key: Name
+          Value: cloudwan-geo-nfg-lab
+
+  CoreNetwork:
+    Type: AWS::NetworkManager::CoreNetwork
+    Properties:
+      GlobalNetworkId: !Ref GlobalNetwork
+      Description: Geo-based segments with NFG service insertion
+      PolicyDocument:
+        version: "2021.12"
+        core-network-configuration:
+          vpn-ecmp-support: true
+          dns-support: true
+          asn-ranges:
+            - "64512-64520"
+          edge-locations:
+            - location: us-east-1
+            - location: us-west-2
+            - location: eu-west-1
+        segments:
+          - name: NorthAmericaProd01
+            description: North America Production
+            edge-locations:
+              - us-east-1
+              - us-west-2
+            require-attachment-acceptance: false
+          - name: NorthAmericaNonProd01
+            description: North America Non-Production
+            edge-locations:
+              - us-east-1
+              - us-west-2
+            require-attachment-acceptance: false
+          - name: EuropeProd01
+            description: Europe Production
+            edge-locations:
+              - eu-west-1
+            require-attachment-acceptance: false
+          - name: EuropeNonProd01
+            description: Europe Non-Production
+            edge-locations:
+              - eu-west-1
+            require-attachment-acceptance: false
+        network-function-groups:
+          - name: NorthAmericaNFG01
+            description: Intra-NA inspection (dual-hop)
+            require-attachment-acceptance: false
+          - name: EuropeNFG01
+            description: Intra-EU inspection (dual-hop)
+            require-attachment-acceptance: false
+          - name: CrossGeoNFG01
+            description: Cross-geography inspection (dual-hop)
+            require-attachment-acceptance: false
+          - name: NorthAmericaEgressNFG01
+            description: NA internet egress inspection
+            require-attachment-acceptance: false
+          - name: EuropeEgressNFG01
+            description: EU internet egress inspection
+            require-attachment-acceptance: false
+        segment-actions:
+          # Intra-NA inspection (dual-hop)
+          - action: send-via
+            segment: NorthAmericaProd01
+            mode: dual-hop
+            when-sent-to:
+              segments:
+                - NorthAmericaNonProd01
+            via:
+              network-function-groups:
+                - NorthAmericaNFG01
+          # Intra-EU inspection (dual-hop)
+          - action: send-via
+            segment: EuropeProd01
+            mode: dual-hop
+            when-sent-to:
+              segments:
+                - EuropeNonProd01
+            via:
+              network-function-groups:
+                - EuropeNFG01
+          # Cross-geo inspection (dual-hop)
+          - action: send-via
+            segment: NorthAmericaProd01
+            mode: dual-hop
+            when-sent-to:
+              segments:
+                - EuropeProd01
+            via:
+              network-function-groups:
+                - CrossGeoNFG01
+          # Internet egress - NA segments
+          - action: send-to
+            segment: NorthAmericaProd01
+            via:
+              network-function-groups:
+                - NorthAmericaEgressNFG01
+          - action: send-to
+            segment: NorthAmericaNonProd01
+            via:
+              network-function-groups:
+                - NorthAmericaEgressNFG01
+          # Internet egress - EU segments
+          - action: send-to
+            segment: EuropeProd01
+            via:
+              network-function-groups:
+                - EuropeEgressNFG01
+          - action: send-to
+            segment: EuropeNonProd01
+            via:
+              network-function-groups:
+                - EuropeEgressNFG01
+        attachment-policies:
+          - rule-number: 100
+            description: NFG-NorthAmericaNFG01
+            condition-logic: and
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: "cloudwan:nfg"
+                value: NorthAmericaNFG01
+            action:
+              add-to-network-function-group: NorthAmericaNFG01
+          - rule-number: 110
+            description: NFG-EuropeNFG01
+            condition-logic: and
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: "cloudwan:nfg"
+                value: EuropeNFG01
+            action:
+              add-to-network-function-group: EuropeNFG01
+          - rule-number: 120
+            description: NFG-CrossGeoNFG01
+            condition-logic: and
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: "cloudwan:nfg"
+                value: CrossGeoNFG01
+            action:
+              add-to-network-function-group: CrossGeoNFG01
+          - rule-number: 130
+            description: NFG-NorthAmericaEgressNFG01
+            condition-logic: and
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: "cloudwan:nfg"
+                value: NorthAmericaEgressNFG01
+            action:
+              add-to-network-function-group: NorthAmericaEgressNFG01
+          - rule-number: 140
+            description: NFG-EuropeEgressNFG01
+            condition-logic: and
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: "cloudwan:nfg"
+                value: EuropeEgressNFG01
+            action:
+              add-to-network-function-group: EuropeEgressNFG01
+          - rule-number: 200
+            description: Segment-assignment-by-tag
+            condition-logic: and
+            conditions:
+              - type: tag-exists
+                key: "cloudwan:segment"
+            action:
+              association-method: tag
+              tag-value-of-key: "cloudwan:segment"
+      Tags:
+        - Key: Name
+          Value: cloudwan-geo-nfg-lab-core
+
+Outputs:
+  GlobalNetworkId:
+    Value: !Ref GlobalNetwork
+    Export:
+      Name: !Sub ${AWS::StackName}-GlobalNetworkId
+  CoreNetworkId:
+    Value: !Ref CoreNetwork
+    Export:
+      Name: !Sub ${AWS::StackName}-CoreNetworkId
+  CoreNetworkArn:
+    Value: !GetAtt CoreNetwork.CoreNetworkArn
+    Export:
+      Name: !Sub ${AWS::StackName}-CoreNetworkArn

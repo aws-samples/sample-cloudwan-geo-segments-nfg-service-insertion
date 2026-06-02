@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  EC2 Forwarding Appliance for Cloud WAN NFG Lab.
+  Simulates a firewall (e.g., Palo Alto behind GWLB) using IP forwarding.
+  Source/Dest check disabled, iptables FORWARD ACCEPT.
+
+Parameters:
+  ApplianceSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet to deploy the appliance in
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for security group
+  InstanceName:
+    Type: String
+    Description: Name tag for the instance
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  ApplianceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all traffic for inspection appliance
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: "-1"
+          CidrIp: 10.0.0.0/8
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${InstanceName}-sg
+
+  ApplianceInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SubnetId: !Ref ApplianceSubnetId
+      SecurityGroupIds:
+        - !Ref ApplianceSecurityGroup
+      SourceDestCheck: false
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Enable IP forwarding
+          echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+          sysctl -w net.ipv4.ip_forward=1
+          # Accept all forwarded traffic
+          iptables -P FORWARD ACCEPT
+          # Persist iptables
+          iptables-save > /etc/sysconfig/iptables
+      Tags:
+        - Key: Name
+          Value: !Ref InstanceName
+
+Outputs:
+  InstanceId:
+    Value: !Ref ApplianceInstance
+  PrivateIp:
+    Value: !GetAtt ApplianceInstance.PrivateIp
+  NetworkInterfaceId:
+    Value: !GetAtt ApplianceInstance.PrimaryNetworkInterfaceId
+    Description: >
+      Use this ENI ID to create the route in the CWAN Route Table:
+      aws ec2 create-route --route-table-id <CwanRouteTableId>
+        --destination-cidr-block 10.0.0.0/8
+        --network-interface-id <this value>
