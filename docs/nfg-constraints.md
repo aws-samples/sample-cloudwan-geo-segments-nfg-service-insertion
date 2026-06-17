@@ -15,7 +15,7 @@ These constraints were discovered through lab testing of AWS Cloud WAN Network F
 | 5 | Appliance mode must be enabled on the Inspection VPC attachment | Service Insertion docs (Considerations) |
 | 6 | One VPC can have up to 5 core network attachments (different subnets/NFGs) | Service Insertion docs |
 
-## Lab-Validated Constraints (not in public docs as of May 2026)
+## Lab-Validated Constraints
 
 | # | Constraint | Console Error Message |
 |---|---|---|
