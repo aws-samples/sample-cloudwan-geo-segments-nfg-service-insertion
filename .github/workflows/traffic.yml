@@ -15,16 +15,25 @@ jobs:
         with:
           ref: traffic-data
 
-      - name: Fetch traffic data
-        uses: yi-Xu-0100/traffic-to-badge@v1.4.0
-        with:
-          my_token: ${{ secrets.TRAFFIC_TOKEN }}
-          static_list: '[]'
+      - name: Fetch and store traffic data
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          mkdir -p data
+
+          gh api "repos/${REPO}/traffic/views" > "data/views_${DATE}.json"
+          gh api "repos/${REPO}/traffic/clones" > "data/clones_${DATE}.json"
+          gh api "repos/${REPO}/traffic/popular/referrers" > "data/referrers_${DATE}.json"
+          gh api "repos/${REPO}/traffic/popular/paths" > "data/paths_${DATE}.json"
+
+          echo "Traffic snapshot saved for ${DATE}"
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
-          git diff --cached --quiet || git commit -m "chore: update traffic data $(date -u +%Y-%m-%d)"
+          git diff --cached --quiet || git commit -m "traffic: ${date -u +%Y-%m-%d}"
           git push
